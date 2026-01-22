@@ -30,4 +30,8 @@ public class Rider {
     @Column(name = "dl")
     private byte[] dl;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private RiderStatus status = RiderStatus.OFFLINE;
+
 }
