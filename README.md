@@ -91,6 +91,128 @@ Returns user details (password is write-only).
 
 Fetches rider profile linked to a user.
 
+## Rider Lifecycle & Availability (Phase 1)
+
+Riders move through a well-defined lifecycle based on availability and order assignment.
+
+## Rider Status States
+
+| Status | Meaning |
+|--------|---------|
+| OFFLINE | Rider is not available for orders |
+| ONLINE | Rider is available to take orders |
+| BUSY | Rider is currently assigned to an order |
+| SUSPENDED | Rider is blocked (admin action) |
+
+## Valid State Transitions
+
+```
+OFFLINE → ONLINE
+ONLINE  → BUSY
+BUSY    → ONLINE
+ONLINE  → OFFLINE
+```
+
+Invalid transitions are rejected by the API.
+
+---
+
+## Rider Availability APIs
+
+### Update Rider Status
+
+**PUT** `/api/riders/{riderId}/status`
+
+Update the availability status of a rider.
+
+**Request**
+
+```json
+{
+  "status": "ONLINE"
+}
+```
+
+**Rules**
+- Invalid state transitions return `400 Bad Request`
+- Suspended riders cannot change status
+
+---
+
+### Get Available Riders
+
+**GET** `/api/riders/available`
+
+Fetch riders who are currently available to take orders.
+
+**Query Params**
+
+| Param | Description | Default |
+|-------|-------------|---------|
+| limit | Max number of riders | 10 |
+
+**Response**
+
+```json
+[
+  {
+    "riderId": 12,
+    "rating": 4.5
+  },
+  {
+    "riderId": 18,
+    "rating": 4.2
+  }
+]
+```
+
+**Used by:**
+- Order Service
+- Admin dashboards
+- Debugging
+
+---
+
+## Order Assignment APIs (Phase 1)
+
+### Assign Rider to Order
+
+**POST** `/api/riders/{riderId}/assign`
+
+Assigns a rider to an order.
+
+**Request**
+
+```json
+{
+  "orderId": 991
+}
+```
+
+**Rules**
+- Rider must be `ONLINE`
+- Rider status changes to `BUSY`
+
+---
+
+### Release Rider After Order Completion
+
+**POST** `/api/riders/{riderId}/release`
+
+Releases a rider after order completion or cancellation.
+
+**Request**
+
+```json
+{
+  "orderId": 991
+}
+```
+
+**Rules**
+- Rider must be `BUSY`
+- Rider status changes back to `ONLINE`
+
 ---
 
 ## Notes
