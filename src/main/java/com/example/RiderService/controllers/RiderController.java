@@ -6,7 +6,6 @@ import com.example.RiderService.dto.UpdateRiderStatusRequest;
 import com.example.RiderService.models.Rider;
 import com.example.RiderService.models.User;
 import com.example.RiderService.repositories.RiderRepository;
-import com.example.RiderService.repositories.UserRepository;
 import com.example.RiderService.services.RiderService;
 import com.example.RiderService.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,9 +28,11 @@ import java.util.Optional;
 @Tag(name = "Riders", description = "Rider onboarding and lifecycle APIs")
 public class RiderController {
 
+    @Autowired
     private final UserService userService;
+    @Autowired
     private RiderService riderService;
-    private UserRepository userRepository;
+    @Autowired
     private RiderRepository riderRepository;
 
 
@@ -57,11 +59,9 @@ public class RiderController {
             @ApiResponse(responseCode = "404", description = "User not found")
     })
     public ResponseEntity<?> createRiderProfile(@Valid @RequestBody CreateRiderRequest request){
-        User user=userService.getUser(request.getUserId()).orElseThrow(()->new RuntimeException("User Not Found"));
+        userService.getUser(request.getUserId()).orElseThrow(()->new RuntimeException("User Not Found"));
 
-        Rider rider = new Rider();
-        rider.setUser(user);
-        rider.setDl(request.getDl());
+        Rider rider=riderService.createRiderProfile(request);
 
         riderRepository.save(rider);
         return new ResponseEntity<>(rider,HttpStatus.CREATED);

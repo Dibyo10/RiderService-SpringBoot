@@ -32,7 +32,10 @@ public class RiderService {
         rider.setUser(user);
         rider.setDl(request.getDl());
 
-        return riderRepository.save(rider);
+
+        riderRepository.save(rider);
+
+        return rider;
 
     }
 

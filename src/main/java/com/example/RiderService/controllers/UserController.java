@@ -1,10 +1,8 @@
 package com.example.RiderService.controllers;
 
 
-import com.example.RiderService.dto.CreateRiderRequest;
 import com.example.RiderService.dto.CreateUserRequest;
 import com.example.RiderService.models.User;
-import com.example.RiderService.repositories.UserRepository;
 import com.example.RiderService.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -15,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.Optional;
 
 @RestController
@@ -25,7 +22,6 @@ public class UserController {
 
     @Autowired
     private UserService userService;
-
 
     @GetMapping("/user/{id}")
     @Operation(
@@ -56,13 +52,7 @@ public class UserController {
             @ApiResponse(responseCode = "400", description = "Validation error")
     })
     public ResponseEntity<?> createUser(@Valid @RequestBody CreateUserRequest request){
-        User user=new User();
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
-        user.setPassword(request.getPassword());
-        user.setPhoneNumber(request.getPhoneNumber());
-
-        userService.createUser(user);
+        User user= userService.createUser(request);
         return new ResponseEntity<>(user,HttpStatus.CREATED);
     }
 
