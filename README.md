@@ -1,7 +1,7 @@
 # Rider Service — Spring Boot
 
 Rider Service for a food delivery backend.  
-This service manages **users**, **riders**, and **rider onboarding**, and exposes a clean API contract via **Swagger (OpenAPI)**.
+This service manages **users**, **riders**, **rider onboarding**, **real-time location tracking**, and exposes a clean API contract via **Swagger (OpenAPI)**.
 
 ---
 
@@ -12,7 +12,8 @@ This service manages **users**, **riders**, and **rider onboarding**, and expose
 - Spring Data JPA
 - Hibernate
 - Springdoc OpenAPI (Swagger)
-- MySQL / PostgreSQL (configurable)
+- PostgreSQL
+- Redis (for real-time location tracking)
 
 ---
 
@@ -27,13 +28,14 @@ This service manages **users**, **riders**, and **rider onboarding**, and expose
 - Stores rider-specific data like:
     - Rating
     - Driving License (DL as BLOB)
+    - Availability status
+    - Real-time location (Redis)
 
 ---
 
 ## API Documentation (Swagger)
 
 Once the application is running:
-
 ```
 http://localhost:8080/swagger-ui/index.html
 ```
@@ -43,7 +45,6 @@ This is the **source of truth** for all endpoints.
 ---
 
 ## Base URL
-
 ```
 /api
 ```
@@ -54,7 +55,6 @@ This is the **source of truth** for all endpoints.
 
 ### Create User
 **POST** `/api/users`
-
 ```json
 {
   "name": "Vimal",
@@ -75,7 +75,6 @@ Returns user details (password is write-only).
 
 ### Create Rider Profile
 **POST** `/api/riders`
-
 ```json
 {
   "userId": 1,
@@ -91,11 +90,13 @@ Returns user details (password is write-only).
 
 Fetches rider profile linked to a user.
 
-## Rider Lifecycle & Availability (Phase 1)
+---
+
+## Rider Lifecycle & Availability
 
 Riders move through a well-defined lifecycle based on availability and order assignment.
 
-## Rider Status States
+### Rider Status States
 
 | Status | Meaning |
 |--------|---------|
@@ -104,8 +105,7 @@ Riders move through a well-defined lifecycle based on availability and order ass
 | BUSY | Rider is currently assigned to an order |
 | SUSPENDED | Rider is blocked (admin action) |
 
-## Valid State Transitions
-
+### Valid State Transitions
 ```
 OFFLINE → ONLINE
 ONLINE  → BUSY
@@ -126,7 +126,6 @@ Invalid transitions are rejected by the API.
 Update the availability status of a rider.
 
 **Request**
-
 ```json
 {
   "status": "ONLINE"
@@ -152,7 +151,6 @@ Fetch riders who are currently available to take orders.
 | limit | Max number of riders | 10 |
 
 **Response**
-
 ```json
 [
   {
@@ -173,7 +171,7 @@ Fetch riders who are currently available to take orders.
 
 ---
 
-## Order Assignment APIs (Phase 1)
+## Order Assignment APIs
 
 ### Assign Rider to Order
 
@@ -182,7 +180,6 @@ Fetch riders who are currently available to take orders.
 Assigns a rider to an order.
 
 **Request**
-
 ```json
 {
   "orderId": 991
@@ -202,7 +199,6 @@ Assigns a rider to an order.
 Releases a rider after order completion or cancellation.
 
 **Request**
-
 ```json
 {
   "orderId": 991
@@ -215,6 +211,136 @@ Releases a rider after order completion or cancellation.
 
 ---
 
+## Rider Location Tracking (Redis-backed)
+
+The Rider Service supports real-time rider location tracking to enable order assignment and live tracking.
+
+### Design Principles
+
+* Rider location is high-frequency, ephemeral data
+* Only the latest known location is required
+* Location updates are pushed by the rider client
+* Location data is stored only in Redis (not in the DB)
+
+This design avoids unnecessary database load and supports low-latency reads during order assignment.
+
+### Location Storage Model
+
+* **Storage:** Redis
+* **Key format:**
+```
+rider:{riderId}:location
+```
+
+* **Value:**
+```json
+{
+  "lat": 12.9352,
+  "lon": 77.6245,
+  "updatedAt": 1706100000000
+}
+```
+
+* **TTL:** 5 minutes (Automatically expires if the rider stops sending updates)
+
+If a location key is missing, the rider's location is treated as stale or unavailable.
+
+---
+
+## Rider Location APIs
+
+### Update Rider Location
+
+**PUT** `/api/riders/{riderId}/location`
+
+This endpoint is called periodically (every 5–10 seconds) by the rider client (mobile app) to update the last-known location.
+
+**Request**
+```json
+{
+  "latitude": 12.9352,
+  "longitude": 77.6245
+}
+```
+
+**Rules**
+* Rider must exist
+* Rider must not be `OFFLINE`
+* Location is overwritten in Redis
+* TTL is refreshed on each update
+
+---
+
+### Get Rider Current Location
+
+**GET** `/api/riders/{riderId}/location`
+
+Fetches the last-known rider location from Redis.
+
+**Response**
+```json
+{
+  "riderId": 12,
+  "latitude": 12.9352,
+  "longitude": 77.6245,
+  "updatedAt": 1706100000000
+}
+```
+
+**Notes**
+* Returns `404 Not Found` if location is stale or unavailable
+* This endpoint is used by:
+    * Order Service (for assignment)
+    * Admin dashboards
+    * Debugging / tracking
+
+---
+
+## Architectural Note: Redis-only for Now
+
+Currently, rider location data is stored only in Redis and is not persisted to the database.
+
+This is intentional.
+
+### Why Redis-only?
+
+* Location updates are frequent
+* Location data changes constantly
+* Historical precision is not required for live operations
+* Overwriting a single key in Redis is extremely fast
+
+This keeps:
+* Database load low
+* Assignment latency minimal
+* System behavior easy to reason about
+
+### Future Enhancement: Async DB Persistence (Planned)
+
+In a future iteration, rider locations may be persisted asynchronously to the database at coarse intervals (e.g., every 10–15 minutes or on key lifecycle events).
+
+#### Why async DB persistence is useful
+
+Async persistence is not required for live operations, but it enables:
+
+* 📊 **Analytics & heatmaps**
+    * Rider density over time
+    * Supply vs demand analysis
+* 🛠️ **Debugging & incident analysis**
+    * Investigating delayed or failed orders
+* 🔄 **System recovery**
+    * Restoring approximate state after Redis restarts
+* 🤖 **ML / optimization (future)**
+    * Training ETA or acceptance prediction models
+
+**Importantly:**
+* Async DB writes will not be on the hot path
+* Redis remains the source of truth for real-time behavior
+* Losing a few seconds of location data is acceptable
+
+This separation keeps the system fast now, while leaving room for future growth.
+
+---
+
 ## Notes
 
 - Swagger reflects all available APIs
@@ -223,13 +349,11 @@ Releases a rider after order completion or cancellation.
 ---
 
 ## How to Run Locally
-
 ```bash
 ./mvnw spring-boot:run
 ```
 
 or
-
 ```bash
 mvn spring-boot:run
 ```
